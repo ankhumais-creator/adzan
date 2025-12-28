@@ -53,6 +53,26 @@
             </intent-filter>
         </receiver>
 
+        <!-- Background Service untuk Adzan notification -->
+        <service android:name="id.flutter.flutter_background_service.BackgroundService" 
+                 android:exported="false"
+                 android:foregroundServiceType="specialUse">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+            </intent-filter>
+        </service>
+
+        <!-- Boot Receiver untuk autostart background service setelah HP restart -->
+        <receiver android:name="id.flutter.flutter_background_service.BootReceiver" 
+                  android:enabled="true" 
+                  android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+                <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
+
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

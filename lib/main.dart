@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 // Core services
 import 'core/services/notification_service.dart';
 import 'core/services/prayer_background_service.dart';
+import 'core/services/background_service.dart';
 
 // Models
 import 'models/app_settings.dart';
@@ -35,6 +36,9 @@ void main() async {
   
   // Initialize background service for reliable prayer monitoring
   await PrayerBackgroundService.initialize();
+  
+  // Initialize foreground service untuk notifikasi Adzan persisten
+  await initializeService();
   
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
