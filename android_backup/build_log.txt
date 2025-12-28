@@ -1,0 +1,56 @@
+﻿> Task :gradle:checkKotlinGradlePluginConfigurationErrors
+> Task :gradle:compileKotlin UP-TO-DATE
+> Task :gradle:compileJava NO-SOURCE
+> Task :gradle:compileGroovy NO-SOURCE
+> Task :gradle:pluginDescriptors UP-TO-DATE
+> Task :gradle:processResources
+> Task :gradle:classes
+> Task :gradle:jar
+./gradlew : 
+At line:1 char:13
++ cd android; ./gradlew 
+assembleRelease 2>&1 | Out-File 
+-FilePath build ...
++             
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotS 
+   pecified: (:String) [], Remote  
+  Exception
+    + FullyQualifiedErrorId : Nati 
+   veCommandError
+ 
+FAILURE: Build failed with an 
+exception.
+
+* Where:
+Build file 'C:\Users\andi\Desktop\a
+dzan_monokrom\android\app\build.gra
+dle' line: 2
+
+* What went wrong:
+An exception occurred applying 
+plugin request [id: 
+'com.android.application']
+> Failed to apply plugin 'com.andro
+id.internal.version-check'.
+   > Minimum supported Gradle 
+version is 8.11.1. Current version 
+is 8.9. If using the gradle 
+wrapper, try editing the 
+distributionUrl in C:\Users\andi\De
+sktop\adzan_monokrom\android\gradle
+\wrapper\gradle-wrapper.properties 
+to gradle-8.11.1-all.zip
+
+* Try:
+> Run with --stacktrace option to 
+get the stack trace.
+> Run with --info or --debug 
+option to get more log output.
+> Run with --scan to get full 
+insights.
+> Get more help at 
+https://help.gradle.org.
+
+BUILD FAILED in 950ms
+5 actionable tasks: 3 executed, 2 up-to-date
