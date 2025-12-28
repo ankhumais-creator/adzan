@@ -56,7 +56,8 @@
         <!-- Background Service untuk Adzan notification -->
         <service android:name="id.flutter.flutter_background_service.BackgroundService" 
                  android:exported="false"
-                 android:foregroundServiceType="specialUse">
+                 android:foregroundServiceType="specialUse"
+                 tools:replace="android:exported">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
             </intent-filter>
