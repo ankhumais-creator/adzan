@@ -1,107 +1,83 @@
 package com.example.adzan_monokrom
 
-import android.app.Notification
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.Service
+import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
-import kotlinx.coroutines.*
-import java.util.concurrent.TimeUnit
+import java.util.*
 
 class AdzanService : Service() {
 
     companion object {
-        const val CHANNEL_ID = "adzan_native_channel"
-        const val NOTIFICATION_ID = 888
+        private const val CHANNEL_ID = "adzan_native_channel"
+        private const val NOTIFICATION_ID = 999
     }
-
-    private val serviceScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
-    private var timerJob: Job? = null
-    private lateinit var notificationManager: NotificationManager
 
     override fun onCreate() {
         super.onCreate()
-        notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         createNotificationChannel()
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val targetTimeMs = intent?.getLongExtra("targetTime", 0L) ?: 0L
-        val prayerName = intent?.getStringExtra("prayerName") ?: "Sholat"
+        val action = intent?.action
 
-        // Mulai sebagai Foreground Service
-        startForeground(NOTIFICATION_ID, buildNotification("Menunggu...", "Memuat timer..."))
+        if (action == "ACTION_PLAY_ADZAN") {
+            // --- MODE AKTIF: SAAT ADZAN ---
+            val prayerName = intent.getStringExtra("prayerName") ?: "Sholat"
+            startForeground(NOTIFICATION_ID, buildAlertNotification(prayerName))
+            playAdzanSound()
+            
+            // Matikan service setelah selesai (Auto-Stop untuk hemat baterai)
+            stopSelf()
+        } else {
+            // --- MODE STANDBY: SAAT SET TIMER ---
+            val targetTimeMs = intent?.getLongExtra("targetTime", 0) ?: return START_NOT_STICKY
+            val prayerName = intent.getStringExtra("prayerName") ?: "Sholat"
 
-        // Jalankan Timer
-        startTimer(targetTimeMs, prayerName)
+            // Tampilkan notifikasi "Standby" sekali saja, TANPA loop update
+            startForeground(NOTIFICATION_ID, buildStandbyNotification(prayerName, targetTimeMs))
+            
+            // Panggil AlarmManager Lalu LEPAS (CPU bisa tidur)
+            AdzanAlarmScheduler.scheduleAdzan(this, targetTimeMs, prayerName)
+        }
 
-        return START_STICKY
+        return START_NOT_STICKY // Tidak restart jika mati
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    override fun onDestroy() {
-        super.onDestroy()
-        timerJob?.cancel()
-        serviceScope.cancel()
-    }
-
-    private fun startTimer(targetTimeMs: Long, prayerName: String) {
-        timerJob?.cancel()
-        timerJob = serviceScope.launch {
-            while (isActive) {
-                val now = System.currentTimeMillis()
-                val diff = targetTimeMs - now
-
-                if (diff <= 0) {
-                    // Waktu Habis
-                    updateNotification("WAKTU TIBA!", "Sudah waktunya Sholat $prayerName", true)
-                    playAdzanSound()
-                    cancel()
-                } else {
-                    // Hitung Mundur
-                    val hours = TimeUnit.MILLISECONDS.toHours(diff)
-                    val minutes = TimeUnit.MILLISECONDS.toMinutes(diff) % 60
-                    val seconds = TimeUnit.MILLISECONDS.toSeconds(diff) % 60
-                    
-                    val timeStr = String.format("%02d:%02d:%02d", hours, minutes, seconds)
-                    updateNotification("Menuju $prayerName", "Sisa Waktu: $timeStr", false)
-                }
-
-                delay(1000)
-            }
-        }
-    }
-
-    private fun updateNotification(title: String, content: String, isAlert: Boolean) {
-        val notification = NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(title)
-            .setContentText(content)
-            .setSmallIcon(R.mipmap.ic_launcher)
-            .setOngoing(true)
-            .setOnlyAlertOnce(true)
-            .setCategory(NotificationCompat.CATEGORY_SERVICE)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .build()
-
-        notificationManager.notify(NOTIFICATION_ID, notification)
-
-        if (isAlert) {
-            playAdzanSound()
-        }
-    }
-
-    private fun buildNotification(title: String, content: String): Notification {
+    // Notifikasi Standby (Tanpa update timer - hemat baterai)
+    private fun buildStandbyNotification(prayerName: String, targetMs: Long): Notification {
+        val targetDate = Date(targetMs)
+        val timeStr = android.text.format.DateFormat.format("HH:mm", targetDate)
+        
         return NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle(title)
-            .setContentText(content)
+            .setContentTitle("Adzan Service Aktif")
+            .setContentText("Menuju $prayerName pada $timeStr")
             .setSmallIcon(R.mipmap.ic_launcher)
             .setOngoing(true)
+            .setShowWhen(false)
+            .setPriority(NotificationCompat.PRIORITY_LOW) // Low priority = less battery
             .build()
+    }
+
+    // Notifikasi Alarm (Saat waktu tiba)
+    private fun buildAlertNotification(prayerName: String): Notification {
+        return NotificationCompat.Builder(this, CHANNEL_ID)
+            .setContentTitle("WAKTU SHOLAT TIBA!")
+            .setContentText("Sudah waktunya Sholat $prayerName")
+            .setSmallIcon(R.mipmap.ic_launcher)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_ALARM)
+            .setAutoCancel(false)
+            .build()
+    }
+
+    private fun playAdzanSound() {
+        // Logika mainkan suara adzan native
+        android.util.Log.d("AdzanOptimization", "Playing Adzan Sound...")
     }
 
     private fun createNotificationChannel() {
@@ -111,15 +87,11 @@ class AdzanService : Service() {
                 "Adzan Native Service",
                 NotificationManager.IMPORTANCE_HIGH
             ).apply {
-                description = "Notifikasi timer native adzan"
+                description = "Notifikasi waktu sholat"
                 setShowBadge(false)
             }
-            notificationManager.createNotificationChannel(channel)
+            val manager = getSystemService(NotificationManager::class.java)
+            manager.createNotificationChannel(channel)
         }
-    }
-
-    private fun playAdzanSound() {
-        // Implementasi pemutar suara asli
-        // Bisa tambahkan MediaPlayer logic jika mau
     }
 }

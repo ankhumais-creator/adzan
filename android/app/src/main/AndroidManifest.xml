@@ -42,13 +42,30 @@
             </intent-filter>
         </activity>
         
-        <!-- NATIVE KOTLIN ADZAN SERVICE (NO LIBRARIES) -->
+        <!-- NATIVE KOTLIN ADZAN SERVICE (GOD MODE OPTIMIZATION) -->
         <service
             android:name=".AdzanService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="specialUse">
         </service>
+
+        <!-- BROADCAST RECEIVER untuk AlarmManager (Jembatan ke AdzanService) -->
+        <receiver 
+            android:name=".AdzanReceiver"
+            android:enabled="true"
+            android:exported="false" />
+
+        <!-- Boot Receiver untuk reschedule alarm setelah HP restart -->
+        <receiver 
+            android:name=".BootReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED"/>
+                <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
+            </intent-filter>
+        </receiver>
 
         <meta-data
             android:name="flutterEmbedding"
