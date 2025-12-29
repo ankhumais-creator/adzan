@@ -132,6 +132,7 @@ void onStart(ServiceInstance service) async {
             NOTIFICATION_CHANNEL_ID, // Channel ID SAMA
             'Adzan Live Timer',
             icon: '@mipmap/ic_launcher',
+            category: AndroidNotificationCategory.service, // Penting: Category Service
             ongoing: true,       // Wajib: Tidak bisa di swipe
             showWhen: false,     // Sembunyikan timestamp
             priority: Priority.high, // Diubah ke HIGH agar Sticky
