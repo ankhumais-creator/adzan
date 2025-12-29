@@ -12,15 +12,15 @@ const String NOTIFICATION_CHANNEL_ID = 'adzan_timer_live_channel';
 Future<void> initializeService() async {
   final service = FlutterBackgroundService();
 
-  // 1. Create notification channel (Importance.low seperti syarat)
+  // 1. Create notification channel (Importance.high agar sticky)
   const AndroidNotificationChannel channel = AndroidNotificationChannel(
     NOTIFICATION_CHANNEL_ID,
     'Adzan Live Timer',
     description: 'Menampilkan hitung mundur menuju waktu sholat',
-    importance: Importance.high, // Diubah ke HIGH agar Sticky
+    importance: Importance.high,
   );
 
-  // Inisialisasi plugin notifikasi SEKADAR untuk create channel di awal
+  // Inisialisasi plugin notifikasi untuk create channel
   final FlutterLocalNotificationsPlugin notificationsPlugin =
       FlutterLocalNotificationsPlugin();
   await notificationsPlugin
@@ -28,7 +28,7 @@ Future<void> initializeService() async {
           AndroidFlutterLocalNotificationsPlugin>()
       ?.createNotificationChannel(channel);
 
-  // 2. Configure service dengan channel ID yang SAMA
+  // 2. Configure service
   await service.configure(
     androidConfiguration: AndroidConfiguration(
       onStart: onStart,
@@ -37,7 +37,7 @@ Future<void> initializeService() async {
       notificationChannelId: NOTIFICATION_CHANNEL_ID,
       initialNotificationTitle: 'Adzan Timer',
       initialNotificationContent: 'Menunggu waktu sholat...',
-      foregroundServiceNotificationId: ONGOING_NOTIFICATION_ID, // Syarat: ID 888
+      foregroundServiceNotificationId: ONGOING_NOTIFICATION_ID,
     ),
     iosConfiguration: IosConfiguration(
       autoStart: true,
@@ -49,17 +49,32 @@ Future<void> initializeService() async {
   service.startService();
 }
 
-// Entry Point Isolate (Harus di Top-Level)
+/// Fungsi untuk update waktu shalat dari main app ke service
+Future<void> updateNextPrayerTime(DateTime nextTime, String prayerName) async {
+  final service = FlutterBackgroundService();
+  
+  // Simpan ke SharedPreferences agar service bisa baca saat start ulang
+  final prefs = await SharedPreferences.getInstance();
+  await prefs.setString('real_prayer_target', nextTime.toIso8601String());
+  await prefs.setString('real_prayer_name', prayerName);
+
+  // Kirim langsung ke service yang sedang berjalan
+  if (await service.isRunning()) {
+    service.invoke('setRealTime', {
+      "time": nextTime.toIso8601String(),
+      "name": prayerName,
+    });
+  }
+}
+
+// Entry Point Isolate
 @pragma('vm:entry-point')
 void onStart(ServiceInstance service) async {
-  // Syarat 1: Init FlutterLocalNotificationsPlugin DI DALAM onStart
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
 
-  // Init SharedPreferences untuk akses data target waktu
   final SharedPreferences prefs = await SharedPreferences.getInstance();
 
-  // Setup Initialization untuk notifikasi (Wajib agar ikon muncul)
   const AndroidInitializationSettings initializationSettingsAndroid =
       AndroidInitializationSettings('@mipmap/ic_launcher');
   
@@ -67,79 +82,121 @@ void onStart(ServiceInstance service) async {
     android: initializationSettingsAndroid,
   );
 
-  // Initialize plugin di dalam isolate
   await flutterLocalNotificationsPlugin.initialize(initializationSettings);
 
-  // Helper listener untuk menerima data dari Main Isolate (jika perlu update target waktu)
-  service.on('setTargetTime').listen((event) {
-    final String newTimeStr = event?['time'] as String;
-    prefs.setString('target_prayer_time', newTimeStr);
+  // Listener untuk menerima data waktu shalat dari Main App
+  service.on('setRealTime').listen((event) {
+    if (event != null) {
+      final String timeStr = event['time'] as String;
+      final String name = event['name'] as String;
+      prefs.setString('real_prayer_target', timeStr);
+      prefs.setString('real_prayer_name', name);
+    }
   });
 
-  // 4. Timer.periodic (Interval 1 detik)
+  // Timer setiap 1 detik
   Timer.periodic(const Duration(seconds: 1), (timer) async {
-    // Cek jika di Background iOS (Hemat baterai)
-    if (Platform.isIOS) {
+    if (Platform.isIOS) return;
+
+    // Reload prefs untuk dapat data terbaru
+    await prefs.reload();
+
+    // Ambil data waktu shalat dari SharedPreferences
+    String storedTarget = prefs.getString('real_prayer_target') ?? '';
+    String storedName = prefs.getString('real_prayer_name') ?? 'Waktu Sholat';
+
+    // Jika tidak ada data, tampilkan "Menunggu..."
+    if (storedTarget.isEmpty) {
+      if (service is AndroidServiceInstance) {
+        await flutterLocalNotificationsPlugin.show(
+          ONGOING_NOTIFICATION_ID,
+          'Adzan Timer',
+          'Menunggu data waktu sholat...',
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              NOTIFICATION_CHANNEL_ID,
+              'Adzan Live Timer',
+              icon: '@mipmap/ic_launcher',
+              category: AndroidNotificationCategory.service,
+              ongoing: true,
+              showWhen: false,
+              priority: Priority.high,
+              playSound: false,
+              enableVibration: false,
+              onlyAlertOnce: true,
+              autoCancel: false,
+              visibility: NotificationVisibility.public,
+            ),
+          ),
+        );
+      }
       return;
     }
 
-    // 2. Dapatkan target waktu sholat (Contoh Logic Dummy)
-    // Di real app, Anda ambil dari API dan simpan di SharedPrefs
-    DateTime targetTime;
-    String storedTarget = prefs.getString('target_prayer_time') ?? '';
-    
-    if (storedTarget.isNotEmpty) {
-      targetTime = DateTime.parse(storedTarget);
-    } else {
-      // Fallback dummy: 5 menit dari sekarang jika belum ada data
-      if (!prefs.containsKey('dummy_timer_set')) {
-        targetTime = DateTime.now().add(const Duration(minutes: 5));
-        await prefs.setString('target_prayer_time', targetTime.toIso8601String());
-        await prefs.setBool('dummy_timer_set', true);
-      } else {
-        // Ambil dummy yang sudah di-set sebelumnya
-        targetTime = DateTime.parse(prefs.getString('target_prayer_time')!);
-      }
-    }
-
+    final DateTime targetTime = DateTime.parse(storedTarget);
     final now = DateTime.now();
     final difference = targetTime.difference(now);
 
-    // 3. Logika Timer
-    if (difference.isNegative) {
-      // Waktu habis -> Bisa panggil fungsi playAdzan() atau reset timer
-      timer.cancel(); 
-      // Reset atau panggil Adzan sesuai kebutuhan
-      return;
-    }
-
-    // Format ke HH:mm:ss
+    // Format Waktu
     String twoDigits(int n) => n.toString().padLeft(2, '0');
     String hours = twoDigits(difference.inHours);
     String minutes = twoDigits(difference.inMinutes.remainder(60));
     String seconds = twoDigits(difference.inSeconds.remainder(60));
     String timeString = "$hours:$minutes:$seconds";
 
-    // 3 & 5. Update Notifikasi
-    // Syarat: ID 888, ongoing: true, showWhen: false, priority: Priority.low
+    // Saat Waktu Tiba
+    if (difference.inSeconds <= 0) {
+      // WAKTU SHOLAT TIBA
+      timer.cancel();
+      
+      // Hapus target tersimpan agar tidak looping
+      await prefs.remove('real_prayer_target');
+      await prefs.remove('real_prayer_name');
+
+      // Panggil Adzan
+      playAdzanSound(prayerName: storedName);
+
+      // Update notifikasi menjadi "Sudah Waktunya"
+      if (service is AndroidServiceInstance) {
+        await flutterLocalNotificationsPlugin.show(
+          ONGOING_NOTIFICATION_ID,
+          'WAKTU SHOLAT TIBA',
+          'Sudah waktunya Sholat $storedName',
+          const NotificationDetails(
+            android: AndroidNotificationDetails(
+              NOTIFICATION_CHANNEL_ID, 
+              'Adzan Timer',
+              icon: '@mipmap/ic_launcher',
+              ongoing: true,
+              priority: Priority.high,
+              playSound: false,
+            ),
+          ),
+        );
+      }
+      
+      return;
+    }
+
+    // Update Notifikasi Timer Realtime
     if (service is AndroidServiceInstance) {
       await flutterLocalNotificationsPlugin.show(
-        ONGOING_NOTIFICATION_ID, // ID SAMA dengan foregroundServiceNotificationId
-        'Menuju Waktu Sholat',   // Judul
-        'Sisa waktu: $timeString', // Body (Berubah setiap detik)
+        ONGOING_NOTIFICATION_ID,
+        'Menuju $storedName',
+        'Sisa waktu: $timeString',
         const NotificationDetails(
           android: AndroidNotificationDetails(
-            NOTIFICATION_CHANNEL_ID, // Channel ID SAMA
+            NOTIFICATION_CHANNEL_ID,
             'Adzan Live Timer',
             icon: '@mipmap/ic_launcher',
-            category: AndroidNotificationCategory.service, // Penting: Category Service
-            ongoing: true,       // Wajib: Tidak bisa di swipe
-            showWhen: false,     // Sembunyikan timestamp
-            priority: Priority.high, // Diubah ke HIGH agar Sticky
-            playSound: false,    // Matikan bunyi agar tidak ribut saat update timer
-            enableVibration: false, // Matikan getar
-            autoCancel: false,   // Jangan hilang saat diklik
-            onlyAlertOnce: true, // Sangat penting: Hanya alert SAAT PERTAMA KALI
+            category: AndroidNotificationCategory.service,
+            ongoing: true,
+            showWhen: false,
+            priority: Priority.high,
+            playSound: false,
+            enableVibration: false,
+            onlyAlertOnce: true,
+            autoCancel: false,
             visibility: NotificationVisibility.public,
           ),
         ),
@@ -147,10 +204,26 @@ void onStart(ServiceInstance service) async {
     }
   });
 
-  // Handle stop
-  service.on('stopService').listen((event) {
-    service.stopSelf();
-  });
+  service.on('stopService').listen((event) => service.stopSelf());
+}
+
+void playAdzanSound({required String prayerName}) {
+  final FlutterLocalNotificationsPlugin notificationsPlugin = FlutterLocalNotificationsPlugin();
+  notificationsPlugin.show(
+    999,
+    "ADZAN $prayerName",
+    "Ayo laksanakan sholat tepat waktu",
+    const NotificationDetails(
+      android: AndroidNotificationDetails(
+        'adzan_sound_channel',
+        'Adzan Alarm',
+        importance: Importance.max,
+        priority: Priority.high,
+        playSound: true,
+        sound: RawResourceAndroidNotificationSound('adzan'),
+      ),
+    ),
+  );
 }
 
 @pragma('vm:entry-point')

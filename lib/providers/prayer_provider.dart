@@ -12,6 +12,7 @@ import 'package:hijri/hijri_calendar.dart';
 import '../models/app_settings.dart';
 import '../core/services/notification_service.dart';
 import '../core/services/native_alarm_service.dart';
+import '../core/services/background_service.dart';
 
 /// Provider for managing prayer times state
 class PrayerProvider extends ChangeNotifier {
@@ -130,6 +131,9 @@ class PrayerProvider extends ChangeNotifier {
     _nextPrayerTime = nextTime;
     if (nextTime != null) {
       _countdown = nextTime.difference(now);
+      
+      // Kirim data ke background service untuk sync timer notifikasi
+      updateNextPrayerTime(nextTime, nextPrayerName);
     }
   }
 
