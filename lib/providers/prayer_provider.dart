@@ -10,9 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:hijri/hijri_calendar.dart';
 
 import '../models/app_settings.dart';
-import '../core/services/notification_service.dart';
-import '../core/services/native_alarm_service.dart';
-import '../core/services/background_service.dart';
+import '../core/services/native_adzan_service.dart';
 
 /// Provider for managing prayer times state
 class PrayerProvider extends ChangeNotifier {
@@ -63,36 +61,12 @@ class PrayerProvider extends ChangeNotifier {
     _updateNextPrayer(DateTime.now(), latitude, longitude, settings);
     _calculateHijriDate();
     
-    // Schedule notifications if enabled
-    if (settings.notificationEnabled && _prayerTimes != null) {
-      notificationService.scheduleAllPrayerNotifications(_prayerTimes!);
-      
-      // Also schedule with native AlarmManager for more reliability
-      _scheduleNativeAlarms(settings);
-    }
+    // Native timer akan distart di _updateNextPrayer()
+    // saat nextPrayer ditemukan
 
     notifyListeners();
   }
-  
-  /// Schedule alarms using native Android AlarmManager
-  Future<void> _scheduleNativeAlarms(AppSettings settings) async {
-    if (_prayerTimes == null) return;
-    
-    try {
-      await NativeAlarmService.scheduleAllPrayerAlarms(
-        fajr: _prayerTimes!.fajr,
-        dhuhr: _prayerTimes!.dhuhr,
-        asr: _prayerTimes!.asr,
-        maghrib: _prayerTimes!.maghrib,
-        isha: _prayerTimes!.isha,
-        playSound: settings.adzanSoundEnabled,
-        vibrate: settings.vibrationEnabled,
-      );
-      debugPrint('PrayerProvider: Native alarms scheduled');
-    } catch (e) {
-      debugPrint('PrayerProvider: Error scheduling native alarms - $e');
-    }
-  }
+
 
   void _updateNextPrayer(DateTime now, double lat, double lng, AppSettings settings) {
     if (_prayerTimes == null) return;
@@ -132,8 +106,11 @@ class PrayerProvider extends ChangeNotifier {
     if (nextTime != null) {
       _countdown = nextTime.difference(now);
       
-      // Kirim data ke background service untuk sync timer notifikasi
-      updateNextPrayerTime(nextTime, nextPrayerName);
+      // Kirim data ke native Kotlin service untuk timer notifikasi
+      NativeAdzanService.startTimer(
+        targetTime: nextTime,
+        prayerName: nextPrayerName,
+      );
     }
   }
 
@@ -189,13 +166,8 @@ class PrayerProvider extends ChangeNotifier {
           );
         }
         
-        // Update ongoing notification with timer
-        if (settings.notificationEnabled && _nextPrayer.isNotEmpty && !_countdown.isNegative) {
-          notificationService.showOngoingTimerNotification(
-            nextPrayerName: _nextPrayer,
-            countdown: _countdown,
-          );
-        }
+        // Timer notification dihandle oleh native AdzanService.kt
+        // dengan live countdown di notifikasi
         
         notifyListeners();
       }
@@ -343,7 +315,8 @@ class PrayerProvider extends ChangeNotifier {
   void dispose() {
     stopTimers();
     _audioPlayer.dispose();
-    notificationService.cancelOngoingNotification();
+    // Stop native service saat app ditutup
+    NativeAdzanService.dispose();
     super.dispose();
   }
 }

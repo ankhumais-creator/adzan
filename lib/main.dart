@@ -5,10 +5,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 
-// Core services
-import 'core/services/notification_service.dart';
-import 'core/services/prayer_background_service.dart';
-import 'core/services/background_service.dart';
+// Core services (Native Kotlin only)
+import 'core/services/native_adzan_service.dart';
 
 // Models
 import 'models/app_settings.dart';
@@ -31,14 +29,8 @@ import 'features/settings/settings_page.dart';
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   
-  // Initialize notifications
-  await notificationService.init();
-  
-  // Initialize background service for reliable prayer monitoring
-  await PrayerBackgroundService.initialize();
-  
-  // Initialize foreground service untuk notifikasi Adzan persisten
-  await initializeService();
+  // Native Kotlin Adzan Service akan dipanggil dari PrayerProvider
+  // saat menghitung waktu sholat berikutnya (no initialization needed)
   
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
